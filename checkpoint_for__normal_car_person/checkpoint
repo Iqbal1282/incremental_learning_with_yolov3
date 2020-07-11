@@ -1,0 +1,2 @@
+model_checkpoint_path: "yolov3_custom_val_loss_  12.90"
+all_model_checkpoint_paths: "yolov3_custom_val_loss_  12.90"
