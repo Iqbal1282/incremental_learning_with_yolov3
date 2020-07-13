@@ -14,12 +14,12 @@ from collections import Counter
 
 NEW_CLASSES_TO_LEARN = './model_data/new_class_to_learn.txt'
 MODEL_OBJECTS_BEFORE_INCRE = './model_data/model_objects_before_incre.txt'
-MODEL_OBJECTS_AFTER_INCRE = './model_data/model_objects_after_incre.txt'
+CLASSES_TO_EVALUATE = './model_data/classes_to_evaluate.txt'
 PASCAL_VOC_ALL_CLASSES = './model_data/pascal_voc07_cls_names.txt'
 
 
-TEST_CLASSES = MODEL_OBJECTS_AFTER_INCRE
-#trainset = Dataset('train', NEW_CLASSES_TO_LEARN, MODEL_OBJECTS_AFTER_INCRE)
+TEST_CLASSES = CLASSES_TO_EVALUATE
+#trainset = Dataset('train', NEW_CLASSES_TO_LEARN, CLASSES_TO_EVALUATE)
 testset = Dataset('test', TEST_CLASSES, TEST_CLASSES)
 
 steps_per_epoch =0
@@ -30,12 +30,12 @@ print(steps_per_epoch)
 
 
 yolo = Create_Yolov3(input_size=YOLO_INPUT_SIZE, training= False, 
-		CLASSES=MODEL_OBJECTS_AFTER_INCRE, dot_name_file = False)
+		CLASSES=CLASSES_TO_EVALUATE, dot_name_file = False)
 
-yolo.load_weights('./checkpoint_for_increment_cat/yolov3_custom_val_loss_38778.18')
+yolo.load_weights('./checkpoints/yolov3_custom_val_loss_  11.08')
 
-num_classes = len(read_class_names(MODEL_OBJECTS_AFTER_INCRE))
-
+num_classes = len(read_class_names(CLASSES_TO_EVALUATE))
+CLASSES_NAME = read_class_names(CLASSES_TO_EVALUATE)
 
 
 
@@ -139,27 +139,48 @@ def evaluate(y_pred, y_true_temp, num_classes, score_thresh=0.4, iou_thresh=0.5)
 	avg_prec  = [true_positive_dict[i] / (true_labels_dict[i] + 1e-6) for i in range(num_classes)]
 	mAP       = sum(avg_prec) / (sum([avg_prec[i] != 0 for i in range(num_classes)]) + 1e-6)
 
-	return recall, precision, mAP
+
+	return recall, precision, mAP, avg_prec, true_labels_dict, true_positive_dict 
 
 
 
 for i in range(1):
 	t_recall=t_precision= t_mAP= 0.  
 	count = 0
+	avg_prec_total   = {i:0 for i in range(num_classes)}
+	true_labels_dict_total  = {i:0 for i in range(num_classes)} 
+	true_positive_dict_total  = {i:0 for i in range(num_classes)}
+
+
+
 	for image_batch, true_label_batch in testset:
 		pred = yolo.predict(image_batch)
-		recall, precision, mAP = evaluate(pred, true_label_batch, num_classes, score_thresh = 0.4, iou_thresh = 0.5)
+		recall, precision, mAP, avg_prec, true_labels_dict, true_positive_dict = evaluate(pred, true_label_batch, 
+			num_classes, score_thresh = 0.4, iou_thresh = 0.5)
+		
 		t_recall += recall
 		t_precision += precision 
 		t_mAP += mAP
 		count +=1 
+		for i in range(num_classes):
+			avg_prec_total[i] += avg_prec[i]
+			true_labels_dict_total[i] += true_labels_dict[i]
+			true_positive_dict_total[i] += true_positive_dict[i]
+
+
 
 		print('Step :{:7d}/{},recall :{:7.3f}, precision : {:7.3f}, mAP : {:7.3f}'.format(count,steps_per_epoch, recall, precision, mAP))
 		#print(recall, precision, mAP)
-		print(t_recall, t_precision, t_mAP, count)
+		#print(t_recall, t_precision, t_mAP, count)
 
 
-	print('average_recall :{:7.3f}, average_precision : {:7.3f}, average_mAP : {:7.3f}'.format(t_recall/count, 
-		t_precision/count, t_mAP/count))
+	print('average_recall :{:7.3f}, average_precision : {:7.3f}'.format(t_recall/count, 
+		t_precision/count))
+
+	for i in range(num_classes):
+		print('{}:-  average_precision_total:{:7.3f}, AP:{:7.3f}'.format(CLASSES_NAME[i], avg_prec_total[i], 
+			true_positive_dict_total[i]/true_labels_dict_total[i]))
+
+
 
 
