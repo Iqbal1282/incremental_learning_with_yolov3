@@ -283,10 +283,19 @@ def compute_loss(pred, conv,  label, bboxes, i=0, CLASSES='', PRED_PREV ='', CLA
 
 	conv = tf.reshape(conv, (batch_size, output_size, output_size, 3, 5 + NUM_CLASS))
 
-	extender=tf.zeros((batch_size, output_size, output_size, 3,(NUM_CLASS-NUM_CLASS_PREV)), tf.float32)
+	extender=tf.zeros((batch_size, output_size, output_size, 3,(NUM_CLASS-NUM_CLASS_PREV)), tf.float32)+0.001
 	PRED_PREV = tf.concat([PRED_PREV, extender], axis = -1)
+
+
 	prev_confidence = PRED_PREV[:,:,:,:,4:5]
-	prev_respond_bgd = tf.cast(PRED_PREV < 0.10, tf.float32)
+
+	present_confidence = tf.sigmoid(conv[:,:,:,:,4:5])
+
+	prev_respond_bgd1 = tf.cast(prev_confidence > 0.007, tf.float32)
+	#prev_respond_bgd2 = tf.cast(present_confidence > 0.75 , tf.float32)
+
+	prev_respond_bgd = prev_respond_bgd1 # + prev_respond_bgd2
+
 
 
 	conv_raw_conf = conv[:, :, :, :, 4:5]
@@ -302,6 +311,8 @@ def compute_loss(pred, conv,  label, bboxes, i=0, CLASSES='', PRED_PREV ='', CLA
 	giou = tf.expand_dims(bbox_giou(pred_xywh, label_xywh), axis=-1)
 	input_size = tf.cast(input_size, tf.float32)
 
+
+
 	bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
 	giou_loss = respond_bbox * bbox_loss_scale * (1 - giou)
 
@@ -314,6 +325,7 @@ def compute_loss(pred, conv,  label, bboxes, i=0, CLASSES='', PRED_PREV ='', CLA
 
 	conf_focal = tf.pow(respond_bbox - pred_conf, 2)
 
+
 	# previous prediction background 
 
 	#
@@ -323,11 +335,14 @@ def compute_loss(pred, conv,  label, bboxes, i=0, CLASSES='', PRED_PREV ='', CLA
 	conf_loss = conf_focal * (
 			respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
 			+
-			respond_bgd *prev_respond_bgd* tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
+			respond_bgd *(1-prev_respond_bgd)* tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
 	)
 
-	distilation_loss = tf.math.abs(respond_bgd*(1-prev_respond_bgd)*(tf.subtract(PRED_PREV,pred)))
-	#distilation_loss = respond_bgd*(1-prev_respond_bgd)*tf.nn.sigmoid_cross_entropy_with_logits(labels=re, logits=conv_raw_conf)
+	distilation_loss_reg= tf.math.abs(respond_bgd*prev_respond_bgd*(tf.subtract(PRED_PREV[:,:,:,:,0:4],pred[:,:,:,:,0:4])))
+	distilation_loss_conf = respond_bgd* (prev_respond_bgd)*tf.nn.sigmoid_cross_entropy_with_logits(labels= PRED_PREV[:,:,:,:,4:5], logits = conv[:,:,:,:,4:5])
+	distilation_loss_prob = respond_bgd* (prev_respond_bgd)*tf.nn.sigmoid_cross_entropy_with_logits(labels= PRED_PREV[:,:,:,:,5:], logits = conv[:,:,:,:,5:])
+	
+
 
 
 	prob_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
@@ -335,7 +350,13 @@ def compute_loss(pred, conv,  label, bboxes, i=0, CLASSES='', PRED_PREV ='', CLA
 	giou_loss = tf.reduce_mean(tf.reduce_sum(giou_loss, axis=[1,2,3,4]))
 	conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1,2,3,4]))
 	prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1,2,3,4]))
-	distilation_loss = tf.reduce_mean(tf.reduce_sum(distilation_loss, axis=[1,2,3,4]))
+
+
+	####################
+	distilation_loss_conf = tf.reduce_mean(tf.reduce_sum(distilation_loss_conf, axis=[1,2,3,4]))
+	distilation_loss_prob= tf.reduce_mean(tf.reduce_sum(distilation_loss_prob, axis=[1,2,3,4]))
+	distilation_loss_reg = tf.reduce_mean(tf.reduce_sum(distilation_loss_reg, axis=[1,2,3,4]))
+	distilation_loss = distilation_loss_prob+ distilation_loss_reg*0.02 + distilation_loss_conf
 
 
 	return giou_loss, conf_loss, prob_loss, distilation_loss 
